@@ -1,4 +1,5 @@
 import pygame, random
+import numpy as np
 import math, time
 from PIL import Image
 from pynput.mouse import Button, Controller
@@ -49,15 +50,13 @@ def orientation(p1, p2, p3):
     return (result - 0.5)
 
 
-
-red_dots = []
 green_dots = []
 red_dot = pygame.image.load('Flight-Control-Bot/red_dot.png')
 green_dot = pygame.image.load('Flight-Control-Bot/green_dot.png')
 
-class Plane1:
+class Plane:
     global screen
-    def __init__(self, Angle = 0, offset_Angle = -2, LandAngle = 0, Pos = [750,100]):
+    def __init__(self, Angle = 0, offset_Angle = -2, LandAngle = 0, Pos = [750,100], Path = []):
 
         self.Image_Path = "Flight-Control-Bot/Plane1.png"
 
@@ -74,51 +73,42 @@ class Plane1:
         self.Pos = Pos#[random.randint(0, 1920/2), random.randint(0, 540)]
 
         # Speed
-        self.Speed = 0.2
+        self.Speed = 0.4
+        self.flying = True
 
-        self.Active = True
-
-        self.LandLoc = [(372, 192), (565, 248)]
-
-        tempLandloc = []
-        start = self.LandLoc[0]
-        end = self.LandLoc[1]
-
-        x_step = (start[0] - end[0]) / 20
-        y_step = (start[1] - end[1]) / 20
-        for i in range(20):
-
-            tempLandloc.append((start[0] - i * x_step,
-                                start[1] - i * y_step))
-
-        self.LandLoc = tempLandloc
-
-        self.LandAngle = 30
+        self.landing_strip = np.array([(372, 192), (565, 248)])
 
         # self.Tow = False
+        self.shrinkage = [i for i in range(80, 10, -3)]
+        print(self.shrinkage)
 
-        self.Path = []#[[200, 200], [300, 300], [400, 200], [500, 300], [600, 200]]
+        self.Path = Path#[[200, 200], [300, 300], [400, 200], [500, 300], [600, 200]]
 
         self.Tow = False
 
-        self.shrinkage = [i * 10 for i in range(6, 1, -1)]
+        self.alpha = 255
 
         self.size = -1
         self.tick = 0
 
+        self.red_dots = []
         for i in self.Path:
-            red_dots.append(i)
+            self.red_dots.append(i)
 
-    def Turn(self, bank):
+    def turn(self, bank):
         self.Angle += bank
         self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
 
-    def Shrink(self, size):
-        if (self.size != -1):
-            self.Pos = [self.Pos[0] + 5,
-                        self.Pos[1] + 5]
-        self.img_og = pygame.transform.scale(self.img_og, (size, size))
-        self.size = size
+    def fade(self):
+        self.img_og.fill((255, 255, 255, int(self.alpha)), special_flags=pygame.BLEND_RGBA_MULT)
+        self.alpha /= 1.2
+
+    # def Shrink(self, size):
+    #     if (self.size != -1):
+    #         self.Pos = [self.Pos[0] + 5,
+    #                     self.Pos[1] + 5]
+    #     self.img_og = pygame.transform.scale(self.img_og, (size, size))
+    #     self.size = size
 
     def fly(self):
         self.tick += 1
@@ -126,41 +116,32 @@ class Plane1:
         bank = 5
         fine_bank = 0.01
 
-        if (self.Pos[0] > 875 and math.cos(math.radians(self.Angle)) > 0 or
-                self.Pos[1] < 0 and math.cos(math.radians(self.Angle - 90)) > 0 or
-                self.Pos[0] < 0 and math.cos(math.radians(self.Angle - 180) > 0) or
-                self.Pos[1] > 500 and math.cos(math.radians(self.Angle + 90) > 0)):
 
-            self.Turn(bank)
-
-        if (self.Active == False):
+        if (self.flying == False):
             if (self.tick% 40 == 0):
                 print("Tick")
-                if (self.Path[0] in self.LandLoc):
-                    print("shrink")
-                    s = self.shrinkage.pop(0)
-                    self.Shrink(s)
-                    # self.img_gpy = pygame.transform.rotate(self.img_og, 40)
+                print("landing: ",self.landing_strip)
+                if (self.Path[0] in self.landing_strip):
+                    self.fade()
 
 
 
-        #TODO: Try Setting Speed to 0 and turning until next point is in angle range
         if (len(self.Path) != 0):
             # if (self.Path[0] not in red_dots):
             #     red_dots.append(self.Path[0])
             dest = self.Path[0]
-            head = self.Head()
-            tail = self.Tail()
+            head = self.head_pose()
+            tail = self.tail_pose()
+            mid = (head + tail) / 2
 
-
-            # AVG.append(orientation(head,tail,dest))
-            turnDir = orientation(head, tail ,dest) * fine_bank
+            turn_direction = orientation(head, tail ,dest) * fine_bank
             # print("Ore", orientation(head, tail, dest))
             # print("turnDir", turnDir)
-            self.Turn(turnDir)
-            if (dist(self.Head(), self.Path[0]) < 5):
+            self.turn(turn_direction)
+
+            if (dist(mid, self.Path[0]) < 15):
                 reached = self.Path.pop(0)
-                red_dots.pop(0)
+                self.red_dots.pop(0)
                 # green_dots.append(reached)
                 # print("Reached", reached)
 
@@ -169,40 +150,43 @@ class Plane1:
 
     def land(self):
         if (len(self.LandLoc) == 1):
-            self.Active = False
+            self.flying = False
 
     def draw(self):
         screen.blit(self.img_gpy, self.Pos)
+        # Path Visualization
+        self.path_vis()
 
     def Towing(self, mouse_position, click_status):
+        # When Clicked Start towing plane with mouse
         if (click_status[0] == True):
             if (dist(mouse_position, (self.Pos[0] + (self.img_pure.size[0]/2),
                                       self.Pos[1] + (self.img_pure.size[1]/2))) < 35):
                 if (len(self.Path) > 0):
                     self.Path.clear()
-                    red_dots.clear()
+                    self.red_dots.clear()
                 self.Tow = True
-                print("Towing")
+                # print("Towing")
 
         if (self.Tow == True):
             if (click_status[0] == False):
                 self.Tow = False
-                print("UnTOWED")
-            elif (dist(mouse_position, self.LandLoc[0]) < 20):
-                self.Active = False
-                for i in self.LandLoc:
+                # print("UnTOWED")
+            elif (dist(mouse_position, self.landing_strip[0]) < 15):
+                self.flying = False
+                for i in self.landing_strip:
                     self.Path.append(i)
-                    red_dots.append(i)
-                print("Locked")
+                    self.red_dots.append(i)
+                # print("Locked")
                 self.Tow = False;
 
             else:
                 print(mouse_position)
-                red_dots.append(mouse_position)
+                self.red_dots.append(mouse_position)
                 self.Path.append(mouse_position)
                 # print(self.Path)
 
-    def Head(self):
+    def head_pose(self):
         # green_dots.append(self.Pos)
         theta = 90
         angle = self.Angle + theta
@@ -212,27 +196,32 @@ class Plane1:
                                               -2 * math.cos(math.radians(self.Angle))))
 
         # red_dots.append(head_loc)
-        return head_loc
+        return np.array(head_loc)
 
-    def Tail(self):
+    def tail_pose(self):
         theta = 90
         angle = self.Angle + theta
         tail_loc = (self.Pos[0] + 30 + (-29 * math.cos(math.radians(self.Angle))),
                     self.Pos[1] + 30 + ( 29 * math.sin(math.radians(self.Angle))))
 
         # red_dots.append(tail_loc)
-        return tail_loc
+        return np.array(tail_loc)
 
-    def Spin(self):
-        self.Angle += 1
-        self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
+    # def Spin(self):
+    #     self.Angle += 1
+    #     self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
+
+    def path_vis(self):
+        for i in self.red_dots:
+            screen.blit(red_dot, (i[0] - 4, i[1] - 4))
+
 
 class Fleet:
 
     planes = []
 
     def spawn(self):
-        self.planes.append(Plane1())
+        self.planes.append(Plane())
 
     def Manage(self, mouse_position, mouse_press_status):
         # if (time.time() == 1000)
@@ -240,24 +229,20 @@ class Fleet:
             i.draw()
             i.fly()
             i.Towing(mouse_position, mouse_press_status)
+            if(i.alpha < 100):
+                self.planes.pop(self.planes.index(i))
+
+    def speacialPlane(self, plane):
+        self.planes.append(plane)
+
 
 test_fleet = Fleet()
-test_fleet.spawn()
-
-
-
-
-
 
 # Plane1 h = 37.5685 w = 37.56
-plane1 = Plane1( Angle = -10, Pos = (50, 50))
-# plane2 = Plane('Plane1.png', Angle = 180 , Speed = 0, Pos = (200, 200))
-# plane3 = Plane('Plane1.png', Angle = -90 , Speed = 0, Pos = (50, 200))
-# plane4 = Plane('Plane1.png', Angle = 90 , Speed = 0, Pos = (200, 50))
-# plane5 = Plane('Plane1.png', offset_Angle = 0, Speed = 0, Pos = (500, 500))
+plane1 = Plane( Angle = 90, Pos = (20, 170))
 
+test_fleet.speacialPlane(plane1)
 
-planes = [plane1]#, plane2, plane3, plane4, plane5]
 
 # Running Indicator
 running = True
@@ -286,10 +271,9 @@ while running:
 
 
     ## DEBUGGING TOOLS
-    for i in green_dots:
-        screen.blit(green_dot, (i[0] - 4, i[1] - 4))
-    for i in red_dots:
-        screen.blit(red_dot, (i[0] - 4, i[1] - 4))
+    # for i in green_dots:
+    #     screen.blit(green_dot, (i[0] - 4, i[1] - 4))
+
 
     # if(int(time.time())%10 == 0):
     #     print(pygame.mouse.get_pressed())
