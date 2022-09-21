@@ -4,7 +4,9 @@ import math, time
 from PIL import Image
 from pynput.mouse import Button, Controller
 
-# AVG = []
+## Updates
+# Spawn Optimization
+# Landing Bug
 
 # Initalize Pygame
 pygame.init()
@@ -16,7 +18,9 @@ clock = pygame.time.Clock()
 background = pygame.image.load('Flight-Control-Bot/Map.png')
 
 # Creating a Window
-screen = pygame.display.set_mode((1920/2, 1080/2))
+screen_width = 1920/2
+screen_height = 1080/2
+screen = pygame.display.set_mode((screen_width, screen_height))
 
 def dist(x,y):
     distance = (((x[0] - y[0]) ** 2) + ((x[1] - y[1] ) ** 2)) ** (0.5)
@@ -50,39 +54,43 @@ def orientation(p1, p2, p3):
     return (result - 0.5)
 
 
-green_dots = []
+green_dots = [[0, screen_height - 60], [screen_width/2, screen_height/2]]
 red_dot = pygame.image.load('Flight-Control-Bot/red_dot.png')
 green_dot = pygame.image.load('Flight-Control-Bot/green_dot.png')
 
 class Plane:
     global screen
-    def __init__(self, Angle = 0, offset_Angle = -2, LandAngle = 0, Pos = [750,100], Path = []):
 
-        self.Image_Path = "Flight-Control-Bot/Plane1.png"
-
-        # Angle In Degrees
-        self.Angle = Angle#random.randint(0, 180)
-        self.OffsetAngle = offset_Angle
+    def __init__(self, spawn_at = [750,100], offset_Angle = -2, LandAngle = 0, Path = None):
 
         # Images
+        self.Image_Path = "Flight-Control-Bot/Plane1.png"
         self.img_pure = Image.open(self.Image_Path)
         self.img_og =  pygame.image.load(self.Image_Path)
-        self.img_gpy = pygame.transform.rotate(self.img_og, offset_Angle + self.Angle)
-
-        # Position
-        self.Pos = Pos#[random.randint(0, 1920/2), random.randint(0, 540)]
+        self.img_gpy = pygame.transform.rotate(self.img_og, offset_Angle)
 
         # Speed
         self.Speed = 0.4
         self.flying = True
 
+        # Position
+        self.position = spawn_at#[random.randint(0, 1920/2), random.randint(0, 540)]
+
+        # Angle In Degrees
+        self.Angle = self.angle_to_center() # random.randint(0, 180)
+        print(f"{self.Angle}")
+
+        self.OffsetAngle = offset_Angle
+
+
         self.landing_strip = np.array([(372, 192), (565, 248)])
 
         # self.Tow = False
         self.shrinkage = [i for i in range(80, 10, -3)]
-        print(self.shrinkage)
 
         self.Path = Path#[[200, 200], [300, 300], [400, 200], [500, 300], [600, 200]]
+        if self.Path is None:
+            self.Path = []
 
         self.Tow = False
 
@@ -94,6 +102,7 @@ class Plane:
         self.red_dots = []
         for i in self.Path:
             self.red_dots.append(i)
+        self.turn(0)
 
     def turn(self, bank):
         self.Angle += bank
@@ -145,23 +154,23 @@ class Plane:
                 # green_dots.append(reached)
                 # print("Reached", reached)
 
-        self.Pos = [self.Pos[0] + self.Speed * math.cos(math.radians(self.Angle)),
-                    self.Pos[1] - self.Speed * math.sin(math.radians(self.Angle))]
+        self.position = [self.position[0] + self.Speed * math.cos(math.radians(self.Angle)),
+                    self.position[1] - self.Speed * math.sin(math.radians(self.Angle))]
 
     def land(self):
         if (len(self.LandLoc) == 1):
             self.flying = False
 
     def draw(self):
-        screen.blit(self.img_gpy, self.Pos)
+        screen.blit(self.img_gpy, self.position)
         # Path Visualization
         self.path_vis()
 
     def Towing(self, mouse_position, click_status):
         # When Clicked Start towing plane with mouse
         if (click_status[0] == True):
-            if (dist(mouse_position, (self.Pos[0] + (self.img_pure.size[0]/2),
-                                      self.Pos[1] + (self.img_pure.size[1]/2))) < 35):
+            if (dist(mouse_position, (self.position[0] + (self.img_pure.size[0]/2),
+                                      self.position[1] + (self.img_pure.size[1]/2))) < 35):
                 if (len(self.Path) > 0):
                     self.Path.clear()
                     self.red_dots.clear()
@@ -190,19 +199,38 @@ class Plane:
         # green_dots.append(self.Pos)
         theta = 90
         angle = self.Angle + theta
-        head_loc = (self.Pos[0] + 30 + (27 * math.cos(math.radians(self.Angle))
+        head_loc = (self.position[0] + 30 + (27 * math.cos(math.radians(self.Angle))
                                             - 2 * math.sin(math.radians(self.Angle))),
-                         self.Pos[1] + 30 + (-27 * math.sin(math.radians(self.Angle))
+                         self.position[1] + 30 + (-27 * math.sin(math.radians(self.Angle))
                                               -2 * math.cos(math.radians(self.Angle))))
 
         # red_dots.append(head_loc)
         return np.array(head_loc)
 
+    def angle_to_center(self):
+        screen_center = [screen_width/2, screen_height/2]
+        return self.angle(self.position, screen_center)
+
+    @staticmethod
+    def angle(coord1, coord2):
+        print(coord1,coord2)
+        try:
+            slope = -1 * (coord2[1] - coord1[1]) / (coord2[0] - coord1[0])
+        except ZeroDivisionError:
+            if(coord2[1] - coord1[1] > 0):
+                return -90
+            else:
+                return  90
+
+        degs = math.degrees(math.atan2(-1 * (coord2[1] - coord1[1]) , (coord2[0] - coord1[0])))
+        print(degs)
+        return degs
+
     def tail_pose(self):
         theta = 90
         angle = self.Angle + theta
-        tail_loc = (self.Pos[0] + 30 + (-29 * math.cos(math.radians(self.Angle))),
-                    self.Pos[1] + 30 + ( 29 * math.sin(math.radians(self.Angle))))
+        tail_loc = (self.position[0] + 30 + (-29 * math.cos(math.radians(self.Angle))),
+                    self.position[1] + 30 + ( 29 * math.sin(math.radians(self.Angle))))
 
         # red_dots.append(tail_loc)
         return np.array(tail_loc)
@@ -220,9 +248,6 @@ class Fleet:
 
     planes = []
 
-    def spawn(self):
-        self.planes.append(Plane())
-
     def Manage(self, mouse_position, mouse_press_status):
         # if (time.time() == 1000)
         for i in self.planes:
@@ -235,19 +260,35 @@ class Fleet:
     def speacialPlane(self, plane):
         self.planes.append(plane)
 
+    def Spawner(self):
+        should_spawn = random.choices([1,0], weights=(1, 1000), k = 1)[0]
+        if (should_spawn):
+            self.spawn()
+
+
+    def spawn(self):
+        spawn_spots = {'up': [[0, -60], [screen_width, -10]], 'down': [[0, screen_height - 60 ], [screen_width, screen_height]],
+                       'left': [[-60, 0], [0, screen_height]], 'right': [[screen_width, 0], [screen_width + 60, screen_height]]}
+
+        _, spawn_rect = random.choice(list(spawn_spots.items()))
+
+        spawn_location = [random.randint(spawn_rect[0][0], spawn_rect[1][0]),
+                          random.randint(spawn_rect[0][1], spawn_rect[1][1])]
+        self.planes.append(Plane(spawn_at= spawn_location))
+
 
 test_fleet = Fleet()
 
+# Special Plane Instance
 # Plane1 h = 37.5685 w = 37.56
-plane1 = Plane( Angle = 90, Pos = (20, 170))
-
-test_fleet.speacialPlane(plane1)
-
+# plane1 = Plane( Angle = 90, Pos = (20, 170))
+# test_fleet.speacialPlane(plane1)
 
 # Running Indicator
 running = True
 h = []
 w = []
+test_fleet.spawn()
 
 # GAME LOOP
 while running:
@@ -264,15 +305,15 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-
+    test_fleet.Spawner()
     test_fleet.Manage(pygame.mouse.get_pos(), pygame.mouse.get_pressed())
-
-    # print(pygame.mouse.get_pos())
 
 
     ## DEBUGGING TOOLS
-    # for i in green_dots:
-    #     screen.blit(green_dot, (i[0] - 4, i[1] - 4))
+    for i in green_dots:
+        screen.blit(green_dot, (i[0] - 4, i[1] - 4))
+
+
 
 
     # if(int(time.time())%10 == 0):
