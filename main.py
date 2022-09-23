@@ -59,16 +59,18 @@ def orientation(p1, p2, p3):
     return result - 0.5
 
 
-class Plane:
-    global screen
+class Plane(pygame.sprite.Sprite):
 
     def __init__(self, spawn_at=[750, 100], offset_angle=-2):
-
+        print("Plane")
+        super().__init__()
         # Images
-        self.Image_Path = "Flight-Control-Bot/Plane1.png"
-        self.img_pure = Image.open(self.Image_Path)
-        self.img_og = pygame.image.load(self.Image_Path)
-        self.img_gpy = pygame.transform.rotate(self.img_og, offset_angle)
+        self.image_path = "Flight-Control-Bot/Plane1.png"
+        self.image_aligned = pygame.image.load(self.image_path)
+        self.image = pygame.image.load(self.image_path)
+        self.rect = self.image.get_rect()
+        # self.img_pure = Image.open(self.Image_Path)
+        # self.img_gpy = pygame.transform.rotate(self.img_og, offset_angle)
 
         # Speed
         self.Speed = 0.4
@@ -102,17 +104,31 @@ class Plane:
             self.red_dots.append(i)
         self.turn(0)
 
-    # Turns the plane by a certain bank angle
+    # # Turns the plane by a certain bank angle
     def turn(self, bank):
         self.Angle += bank
-        self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
+        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.Angle)
+        self.rect = self.image.get_rect()
 
     # Turns the plane to a Certain Angle
     def turn_to(self, angle):
         self.Angle = angle
-        self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
+        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.Angle)
+        self.rect = self.image.get_rect()
 
     # Starts to fade the sprite on approaching landing
+
+    def update(self):
+        # for i in self.planes:
+        #     i.draw()
+        #     i.fly()
+        #     i.Towing(mouse_position, mouse_press_status)
+        #     if i.alpha < 100:
+        #         self.planes.pop(self.planes.index(i))
+        self.draw()
+        self.fly()
+        self.Towing(pygame.mouse.get_pos(), pygame.mouse.get_pressed())
+
     def fade(self):
         self.img_og.fill((255, 255, 255, int(self.alpha)), special_flags=pygame.BLEND_RGBA_MULT)
         self.alpha /= 1.2
@@ -175,11 +191,13 @@ class Plane:
         print("Out of Bounds")
 
     def land(self):
-        if (len(self.LandLoc) == 1):
+        if len(self.LandLoc) == 1:
             self.flying = False
 
     def draw(self):
-        screen.blit(self.img_gpy, self.position)
+        # print( self.position)
+        self.rect.center = self.position
+        # screen.blit(self.img_gpy, self.position)
         # Path Visualization
         # Comment to disable Path Visualization
         self.path_vis()
@@ -187,8 +205,7 @@ class Plane:
     def Towing(self, mouse_position, click_status):
         # When Clicked Start towing plane with mouse
         if click_status[0]:
-            if (dist(mouse_position, (self.position[0] + (self.img_pure.size[0] / 2),
-                                      self.position[1] + (self.img_pure.size[1] / 2))) < 35):
+            if self.rect.collidepoint(mouse_position):
                 if len(self.Path) > 0:
                     self.Path.clear()
                     self.red_dots.clear()
@@ -261,16 +278,13 @@ class Fleet:
 
     def __init__(self):
 
-        self.planes = []
-
-    def Manage(self, mouse_position, mouse_press_status):
+        self.planes_group =  pygame.sprite.Group()
+        print(dir(self.planes_group))
+    def Manage(self):
         # if (time.time() == 1000)
-        for i in self.planes:
-            i.draw()
-            i.fly()
-            i.Towing(mouse_position, mouse_press_status)
-            if i.alpha < 100:
-                self.planes.pop(self.planes.index(i))
+        self.planes_group.draw(screen)
+        self.planes_group.update()
+
 
     def specialPlane(self, plane):
         self.planes.append(plane)
@@ -290,10 +304,15 @@ class Fleet:
 
         spawn_location = [random.randint(spawn_rect[0][0], spawn_rect[1][0]),
                           random.randint(spawn_rect[0][1], spawn_rect[1][1])]
-        self.planes.append(Plane(spawn_at=spawn_location))
+
+        plane_sprite = Plane(spawn_at=spawn_location)
+
+        self.planes_group.add(plane_sprite)
 
 
+# test_fleet = Fleet()
 test_fleet = Fleet()
+
 
 # Special Plane Instance
 # Plane1 h = 37.5685 w = 37.56
@@ -321,7 +340,7 @@ while running:
             running = False
 
     test_fleet.Spawner()
-    test_fleet.Manage(pygame.mouse.get_pos(), pygame.mouse.get_pressed())
+    test_fleet.Manage()
 
     # DEBUGGING TOOLS
     for i in green_dots:
