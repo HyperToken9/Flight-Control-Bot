@@ -8,14 +8,9 @@ from pynput.mouse import Button, Controller
 # Spawn Optimization
 # Landing Bug
 
-# Initialize Pygame
-pygame.init()
 
 # Setup the clock for a decent frame rate
 clock = pygame.time.Clock()
-
-# Background Image
-background = pygame.image.load('Flight-Control-Bot/Map.png')
 
 # Creating a Window
 screen_width = 1920 / 2
@@ -23,13 +18,9 @@ screen_height = 1080 / 2
 screen = pygame.display.set_mode((1920 / 2, 1080 / 2))
 
 green_dots = []
+background = pygame.image.load('Flight-Control-Bot/map.png')
 red_dot = pygame.image.load('Flight-Control-Bot/red_dot.png')
 green_dot = pygame.image.load('Flight-Control-Bot/green_dot.png')
-
-
-def dist(x, y):
-    distance = (((x[0] - y[0]) ** 2) + ((x[1] - y[1]) ** 2)) ** 0.5
-    return distance
 
 
 def orientation(p1, p2, p3):
@@ -47,7 +38,7 @@ def orientation(p1, p2, p3):
 
     if val == 0:
         # Clockwise orientation
-        if dist(p1, p3) < dist(p2, p3):
+        if math.dist(p1, p3) < math.dist(p2, p3):
             result = 0
         else:
             result = 100
@@ -73,15 +64,15 @@ class Plane(pygame.sprite.Sprite):
         # self.img_gpy = pygame.transform.rotate(self.img_og, offset_angle)
 
         # Speed
-        self.Speed = 0.4
+        self.speed = 0.4
         self.flying = True
 
         # Position
         self.position = spawn_at  # [random.randint(0, 1920/2), random.randint(0, 540)]
 
         # Angle In Degrees
-        self.Angle = self.angle_to_center()  # random.randint(0, 180)
-        print(f"{self.Angle}")
+        self.angle = self.angle_to_center()  # random.randint(0, 180)
+        print(f"{self.angle}")
 
         self.OffsetAngle = offset_angle
 
@@ -90,9 +81,9 @@ class Plane(pygame.sprite.Sprite):
         # self.Tow = False
         self.shrinkage = [j for j in range(80, 10, -3)]
 
-        self.Path = []
+        self.way_points = []
 
-        self.Tow = False
+        self.towing_status = False
 
         self.alpha = 255
 
@@ -100,34 +91,28 @@ class Plane(pygame.sprite.Sprite):
         self.tick = 0
 
         self.red_dots = []
-        for i in self.Path:
-            self.red_dots.append(i)
+        for dot in self.way_points:
+            self.red_dots.append(dot)
         self.turn(0)
 
     # # Turns the plane by a certain bank angle
     def turn(self, bank):
-        self.Angle += bank
-        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.Angle)
+        self.angle += bank
+        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.angle)
         self.rect = self.image.get_rect()
 
     # Turns the plane to a Certain Angle
     def turn_to(self, angle):
-        self.Angle = angle
-        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.Angle)
+        self.angle = angle
+        self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.angle)
         self.rect = self.image.get_rect()
 
     # Starts to fade the sprite on approaching landing
 
-    def update(self):
-        # for i in self.planes:
-        #     i.draw()
-        #     i.fly()
-        #     i.Towing(mouse_position, mouse_press_status)
-        #     if i.alpha < 100:
-        #         self.planes.pop(self.planes.index(i))
-        self.draw()
-        self.fly()
-        self.Towing(pygame.mouse.get_pos(), pygame.mouse.get_pressed())
+    def update(self, click_pos, click_status):
+        self.fly()  # FLYs The Plane to NEW Location
+        self.draw()  # DRAWs the Game Sprite to NEW Location
+        self.Towing(click_pos, click_status)
 
     def fade(self):
         self.img_og.fill((255, 255, 255, int(self.alpha)), special_flags=pygame.BLEND_RGBA_MULT)
@@ -140,6 +125,31 @@ class Plane(pygame.sprite.Sprite):
     #     self.img_og = pygame.transform.scale(self.img_og, (size, size))
     #     self.size = size
 
+    def Stanley_Control(self):
+        k = 100
+
+        distances_to_waypoints = list(map(math.dist, [self.position] * len(self.way_points), self.way_points))
+        # print(distances_to_waypoints)
+        smallest_distance = min(distances_to_waypoints)
+        closest_point_index = distances_to_waypoints.index(smallest_distance)
+
+        prev_wp = self.way_points[closest_point_index - 1]
+        next_wp = self.way_points[closest_point_index]
+
+        # cross track error
+        cte_num = (next_wp[0] - prev_wp[0]) * (prev_wp[1] - self.position[1]) - (prev_wp[0] - self.position[0]) * (next_wp[1] - prev_wp[1])
+
+        cte_den = math.dist(prev_wp, next_wp)
+        cross_track_error = cte_num / (cte_den + 1)
+
+        theta_track = math.atan2(next_wp[1] - prev_wp[1], next_wp[0] - prev_wp[0])
+
+        heading_error = theta_track - self.angle
+
+        delta = heading_error + math.atan2(self.speed, k * cross_track_error)
+
+        return delta
+
     def fly(self):
         self.tick += 1
 
@@ -150,32 +160,32 @@ class Plane(pygame.sprite.Sprite):
             if self.tick % 40 == 0:
                 # print("Tick")
                 # print("landing: ",self.landing_strip)
-                if self.Path[0] in self.landing_strip:
+                if self.way_points[0] in self.landing_strip:
                     self.fade()
 
-        if len(self.Path) != 0:
+        if len(self.way_points) != 0:
             # if (self.Path[0] not in red_dots):
             #     red_dots.append(self.Path[0])
-            dest = self.Path[0]
+            goal = self.way_points[0]
             head = self.head_pose()
             tail = self.tail_pose()
             mid = (head + tail) / 2
 
-            turn_direction = orientation(head, tail, dest) * fine_bank
+            turn_direction = orientation(head, tail, goal) * fine_bank
             # print("Ore", orientation(head, tail, dest))
             # print("turnDir", turnDir)
-            self.turn(turn_direction)
+            self.turn(self.Stanley_Control())
 
-            if dist(mid, self.Path[0]) < 15:
-                reached = self.Path.pop(0)
+            if math.dist(mid, self.way_points[0]) < 2:
+                reached = self.way_points.pop(0)
                 self.red_dots.pop(0)
                 # green_dots.append(reached)
                 # print("Reached", reached)
 
         self.restrict_fly_zone()
 
-        self.position = [self.position[0] + self.Speed * math.cos(math.radians(self.Angle)),
-                         self.position[1] - self.Speed * math.sin(math.radians(self.Angle))]
+        self.position = [self.position[0] + self.speed * math.cos(math.radians(self.angle)),
+                         self.position[1] - self.speed * math.sin(math.radians(self.angle))]
 
     # Keeps the plane bound to the screen
     def restrict_fly_zone(self):
@@ -195,40 +205,34 @@ class Plane(pygame.sprite.Sprite):
             self.flying = False
 
     def draw(self):
-        # print( self.position)
         self.rect.center = self.position
-        # screen.blit(self.img_gpy, self.position)
-        # Path Visualization
-        # Comment to disable Path Visualization
         self.path_vis()
 
     def Towing(self, mouse_position, click_status):
         # When Clicked Start towing plane with mouse
-        if click_status[0]:
+        if click_status[0] and ~self.towing_status:
             if self.rect.collidepoint(mouse_position):
-                if len(self.Path) > 0:
-                    self.Path.clear()
+                if len(self.way_points) > 0:
+                    self.way_points.clear()
                     self.red_dots.clear()
-                self.Tow = True
+                self.towing_status = True
                 # print("Towing")
 
-        if self.Tow:
+        if self.towing_status:
             if not click_status[0]:
-                self.Tow = False
+                self.towing_status = False
                 # print("UnTOWED")
-            elif dist(mouse_position, self.landing_strip[0]) < 15:
+            elif math.dist(mouse_position, self.landing_strip[0]) < 15:
                 self.flying = False
                 for i in self.landing_strip:
-                    self.Path.append(i)
+                    self.way_points.append(i)
                     self.red_dots.append(i)
                 # print("Locked")
-                self.Tow = False
+                self.towing_status = False
 
             else:
-                # print(mouse_position)
                 self.red_dots.append(mouse_position)
-                self.Path.append(mouse_position)
-                # print(self.Path)
+                self.way_points.append(mouse_position)
 
     # Give angle to center from current position
     def angle_to_center(self):
@@ -238,29 +242,25 @@ class Plane(pygame.sprite.Sprite):
     @staticmethod
     def angle(coord1, coord2):
 
-        numerator =  coord1[1] - coord2[1]
+        numerator = coord1[1] - coord2[1]
         denominator = coord2[0] - coord1[0]
         degrees = math.degrees(math.atan2(numerator, denominator))
 
         return degrees
 
     def head_pose(self):
-        # green_dots.append(self.Pos)
-        theta = 90
-        angle = self.Angle + theta
-        head_loc = (self.position[0] + 30 + (27 * math.cos(math.radians(self.Angle))
-                                             - 2 * math.sin(math.radians(self.Angle))),
-                    self.position[1] + 30 + (-27 * math.sin(math.radians(self.Angle))
-                                             - 2 * math.cos(math.radians(self.Angle))))
+
+        head_loc = (self.position[0] + 30 + (27 * math.cos(math.radians(self.angle))
+                                             - 2 * math.sin(math.radians(self.angle))),
+                    self.position[1] + 30 + (-27 * math.sin(math.radians(self.angle))
+                                             - 2 * math.cos(math.radians(self.angle))))
 
         # red_dots.append(head_loc)
         return np.array(head_loc)
 
     def tail_pose(self):
-        theta = 90
-        angle = self.Angle + theta
-        tail_loc = (self.position[0] + 30 + (-29 * math.cos(math.radians(self.Angle))),
-                    self.position[1] + 30 + (29 * math.sin(math.radians(self.Angle))))
+        tail_loc = (self.position[0] + 30 + (-29 * math.cos(math.radians(self.angle))),
+                    self.position[1] + 30 + (29 * math.sin(math.radians(self.angle))))
 
         # red_dots.append(tail_loc)
         return np.array(tail_loc)
@@ -270,21 +270,20 @@ class Plane(pygame.sprite.Sprite):
     #     self.img_gpy = pygame.transform.rotate(self.img_og, self.OffsetAngle + self.Angle)
 
     def path_vis(self):
-        for i in self.red_dots:
-            screen.blit(red_dot, (i[0] - 4, i[1] - 4))
+        for dot in self.red_dots:
+            screen.blit(red_dot, (dot[0] - 4, dot[1] - 4))
 
 
 class Fleet:
 
     def __init__(self):
+        self.planes_group = pygame.sprite.Group()
+        # print(dir(self.planes_group))
 
-        self.planes_group =  pygame.sprite.Group()
-        print(dir(self.planes_group))
     def Manage(self):
         # if (time.time() == 1000)
         self.planes_group.draw(screen)
-        self.planes_group.update()
-
+        self.planes_group.update(pygame.mouse.get_pos(), pygame.mouse.get_pressed())
 
     def specialPlane(self, plane):
         self.planes.append(plane)
@@ -312,7 +311,6 @@ class Fleet:
 
 # test_fleet = Fleet()
 test_fleet = Fleet()
-
 
 # Special Plane Instance
 # Plane1 h = 37.5685 w = 37.56
