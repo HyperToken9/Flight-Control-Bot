@@ -58,6 +58,8 @@ class Plane(pygame.sprite.Sprite):
         # Images
         self.image_path = "Flight-Control-Bot/Plane1.png"
         self.image_aligned = pygame.image.load(self.image_path)
+        self.true_rect = self.image_aligned.get_rect()
+
         self.image = pygame.image.load(self.image_path)
         self.rect = self.image.get_rect()
         # self.img_pure = Image.open(self.Image_Path)
@@ -68,10 +70,10 @@ class Plane(pygame.sprite.Sprite):
         self.flying = True
 
         # Position
-        self.position = spawn_at  # [random.randint(0, 1920/2), random.randint(0, 540)]
+        self.position = [300, 300]#spawn_at  # [random.randint(0, 1920/2), random.randint(0, 540)]
 
         # Angle In Degrees
-        self.angle = self.angle_to_center()  # random.randint(0, 180)
+        self.angle =  self.angle_to_center()  # random.randint(0, 180)
         print(f"{self.angle}")
 
         self.OffsetAngle = offset_angle
@@ -95,17 +97,23 @@ class Plane(pygame.sprite.Sprite):
             self.red_dots.append(dot)
         self.turn(0)
 
+
     # # Turns the plane by a certain bank angle
     def turn(self, bank):
         self.angle += bank
         self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.angle)
         self.rect = self.image.get_rect()
+        self.rect.center = self.position
+        # print(dir(self.rect))
+        # print(self.rect)
 
     # Turns the plane to a Certain Angle
     def turn_to(self, angle):
         self.angle = angle
         self.image = pygame.transform.rotate(self.image_aligned, self.OffsetAngle + self.angle)
         self.rect = self.image.get_rect()
+        self.rect.center = self.position
+
 
     # Starts to fade the sprite on approaching landing
 
@@ -113,6 +121,7 @@ class Plane(pygame.sprite.Sprite):
         self.fly()  # FLYs The Plane to NEW Location
         self.draw()  # DRAWs the Game Sprite to NEW Location
         self.Towing(click_pos, click_status)
+
 
     def fade(self):
         self.img_og.fill((255, 255, 255, int(self.alpha)), special_flags=pygame.BLEND_RGBA_MULT)
@@ -124,31 +133,30 @@ class Plane(pygame.sprite.Sprite):
     #                     self.Pos[1] + 5]
     #     self.img_og = pygame.transform.scale(self.img_og, (size, size))
     #     self.size = size
-
-    def Stanley_Control(self):
-        k = 100
-
-        distances_to_waypoints = list(map(math.dist, [self.position] * len(self.way_points), self.way_points))
-        # print(distances_to_waypoints)
-        smallest_distance = min(distances_to_waypoints)
-        closest_point_index = distances_to_waypoints.index(smallest_distance)
-
-        prev_wp = self.way_points[closest_point_index - 1]
-        next_wp = self.way_points[closest_point_index]
-
-        # cross track error
-        cte_num = (next_wp[0] - prev_wp[0]) * (prev_wp[1] - self.position[1]) - (prev_wp[0] - self.position[0]) * (next_wp[1] - prev_wp[1])
-
-        cte_den = math.dist(prev_wp, next_wp)
-        cross_track_error = cte_num / (cte_den + 1)
-
-        theta_track = math.atan2(next_wp[1] - prev_wp[1], next_wp[0] - prev_wp[0])
-
-        heading_error = theta_track - self.angle
-
-        delta = heading_error + math.atan2(self.speed, k * cross_track_error)
-
-        return delta
+    # def Stanley_Control(self):
+    #     k = 100
+    #
+    #     distances_to_waypoints = list(map(math.dist, [self.position] * len(self.way_points), self.way_points))
+    #     # print(distances_to_waypoints)
+    #     smallest_distance = min(distances_to_waypoints)
+    #     closest_point_index = distances_to_waypoints.index(smallest_distance)
+    #
+    #     prev_wp = self.way_points[closest_point_index - 1]
+    #     next_wp = self.way_points[closest_point_index]
+    #
+    #     # cross track error
+    #     cte_num = (next_wp[0] - prev_wp[0]) * (prev_wp[1] - self.position[1]) - (prev_wp[0] - self.position[0]) * (next_wp[1] - prev_wp[1])
+    #
+    #     cte_den = math.dist(prev_wp, next_wp)
+    #     cross_track_error = cte_num / (cte_den + 1)
+    #
+    #     theta_track = math.atan2(next_wp[1] - prev_wp[1], next_wp[0] - prev_wp[0])
+    #
+    #     heading_error = theta_track - self.angle
+    #
+    #     delta = heading_error + math.atan2(self.speed, k * cross_track_error)
+    #
+    #     return delta
 
     def fly(self):
         self.tick += 1
@@ -174,13 +182,11 @@ class Plane(pygame.sprite.Sprite):
             turn_direction = orientation(head, tail, goal) * fine_bank
             # print("Ore", orientation(head, tail, dest))
             # print("turnDir", turnDir)
-            self.turn(self.Stanley_Control())
+            self.turn(turn_direction)
 
-            if math.dist(mid, self.way_points[0]) < 2:
+            if math.dist(head, self.way_points[0]) < 2 or math.dist(mid,self.way_points[0]) < 8:
                 reached = self.way_points.pop(0)
                 self.red_dots.pop(0)
-                # green_dots.append(reached)
-                # print("Reached", reached)
 
         self.restrict_fly_zone()
 
@@ -194,11 +200,16 @@ class Plane(pygame.sprite.Sprite):
         if self.tick < 500:
             return
 
-        if -25 < self.position[0] < screen_width - 10 and -25 < self.position[1] < screen_height - 10:
-            return
+        if self.is_out_of_bounds():
+            self.turn_to(self.angle_to_center())
+            print("Out of Bounds")
 
-        self.turn_to(self.angle_to_center())
-        print("Out of Bounds")
+    # Checks if plane has left screen
+    def is_out_of_bounds(self):
+        if -25 < self.position[0] < screen_width - 10 and -25 < self.position[1] < screen_height - 10:
+            return False
+        return True
+
 
     def land(self):
         if len(self.LandLoc) == 1:
@@ -237,10 +248,11 @@ class Plane(pygame.sprite.Sprite):
     # Give angle to center from current position
     def angle_to_center(self):
         screen_center = [screen_width / 2, screen_height / 2]
-        return self.angle(self.position, screen_center)
+        # print(type(self.position), type(screen_center))
+        return self.angle_of_points(self.position, screen_center)
 
     @staticmethod
-    def angle(coord1, coord2):
+    def angle_of_points(coord1, coord2):
 
         numerator = coord1[1] - coord2[1]
         denominator = coord2[0] - coord1[0]
@@ -250,20 +262,24 @@ class Plane(pygame.sprite.Sprite):
 
     def head_pose(self):
 
-        head_loc = (self.position[0] + 30 + (27 * math.cos(math.radians(self.angle))
-                                             - 2 * math.sin(math.radians(self.angle))),
-                    self.position[1] + 30 + (-27 * math.sin(math.radians(self.angle))
-                                             - 2 * math.cos(math.radians(self.angle))))
+        w, _ = self.true_rect.size
+
+        delta = self.rotate(np.array([w/2, 0]), degrees= -1 * self.angle)
+
+        head_loc = self.position + delta
 
         # red_dots.append(head_loc)
-        return np.array(head_loc)
+        return head_loc
 
     def tail_pose(self):
-        tail_loc = (self.position[0] + 30 + (-29 * math.cos(math.radians(self.angle))),
-                    self.position[1] + 30 + (29 * math.sin(math.radians(self.angle))))
+        w, _ = self.true_rect.size
 
-        # red_dots.append(tail_loc)
-        return np.array(tail_loc)
+        delta = self.rotate(np.array([-w / 2, 0]), degrees=-1 * self.angle)
+
+        tail_loc = self.position + delta
+
+        # red_dots.append(head_loc)
+        return tail_loc
 
     # def Spin(self):
     #     self.Angle += 1
@@ -273,6 +289,14 @@ class Plane(pygame.sprite.Sprite):
         for dot in self.red_dots:
             screen.blit(red_dot, (dot[0] - 4, dot[1] - 4))
 
+    @staticmethod
+    def rotate(p, origin=(0, 0), degrees=0):
+        angle = np.deg2rad(degrees)
+        R = np.array([[np.cos(angle), -np.sin(angle)],
+                      [np.sin(angle), np.cos(angle)]])
+        o = np.atleast_2d(origin)
+        p = np.atleast_2d(p)
+        return np.squeeze((R @ (p.T - o.T) + o.T).T)
 
 class Fleet:
 
@@ -337,7 +361,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    test_fleet.Spawner()
+    # test_fleet.Spawner()
     test_fleet.Manage()
 
     # DEBUGGING TOOLS
